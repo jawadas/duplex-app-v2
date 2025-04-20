@@ -1,12 +1,18 @@
-import React, { useState } from 'react';
-import { Upload, Save } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Upload, Save, Plus, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { PurchaseType, PurchaseTypeTranslations } from '../types/purchase.types';
 import { api } from '../services/api';
 import { DUPLEX_NUMBERS } from '../constants/duplex';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { storage } from '../services/storage';
+
+// Add interface for custom types
+interface CustomPurchaseType {
+  id: number;
+  name: string;
+  name_ar: string;
+}
 
 interface Purchase {
   name: string;
@@ -35,6 +41,73 @@ const NewEntryPage: React.FC = () => {
   });
   const [attachments, setAttachments] = useState<File[]>([]);
   const [validationErrors, setValidationErrors] = useState<{[key: string]: boolean}>({});
+  
+  // Add new state for custom types
+  const [customTypes, setCustomTypes] = useState<CustomPurchaseType[]>([]);
+  const [showTypeModal, setShowTypeModal] = useState(false);
+  const [newType, setNewType] = useState({ name: '', name_ar: '' });
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // Check if user is admin
+  useEffect(() => {
+    setIsAdmin(user?.role === 'admin');
+    // Load custom types
+    loadCustomTypes();
+  }, [user]);
+
+  // Function to load custom types
+  const loadCustomTypes = async () => {
+    try {
+      const response = await api.purchaseTypes.getAll();
+      if (response.success && response.data) {
+        setCustomTypes(response.data);
+      }
+    } catch (error) {
+      console.error('Error loading custom types:', error);
+    }
+  };
+
+  // Function to add new type
+  const handleAddType = async () => {
+    if (!newType.name || !newType.name_ar) return;
+    
+    try {
+      setIsLoading(true);
+      const response = await api.purchaseTypes.create({
+        name: newType.name,
+        name_ar: newType.name_ar
+      });
+      
+      if (response.success) {
+        await loadCustomTypes();
+        setNewType({ name: '', name_ar: '' });
+      }
+    } catch (error) {
+      console.error('Error adding custom type:', error);
+      alert(isArabic ? 'حدث خطأ أثناء إضافة النوع' : 'Error adding type');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Function to delete type
+  const handleDeleteType = async (id: number) => {
+    if (!confirm(isArabic ? 'هل أنت متأكد من حذف هذا النوع؟' : 'Are you sure you want to delete this type?')) return;
+    
+    try {
+      setIsLoading(true);
+      const response = await api.purchaseTypes.delete(id);
+      
+      if (response.success) {
+        await loadCustomTypes();
+      }
+    } catch (error) {
+      console.error('Error deleting custom type:', error);
+      alert(isArabic ? 'حدث خطأ أثناء حذف النوع' : 'Error deleting type');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -80,7 +153,7 @@ const NewEntryPage: React.FC = () => {
     }
     
     // Type validation
-    if (!entry.type || !Object.values(PurchaseType).includes(entry.type as PurchaseType)) {
+    if (!entry.type) {
       errors.type = true;
     }
     
@@ -118,10 +191,18 @@ const NewEntryPage: React.FC = () => {
         }
       }
       
+      // Get the selected type name from the customTypes array
+      const selectedTypeId = parseInt(entry.type);
+      const selectedType = customTypes.find(type => type.id === selectedTypeId);
+      
+      if (!selectedType) {
+        throw new Error('Selected type not found');
+      }
+      
       const purchaseData = {
         name: entry.name,
         duplex_number: Number(entry.duplex_number),
-        type: entry.type,
+        type: selectedType.name, // Use the actual type name
         purchase_date: entry.purchase_date,
         price: Number(entry.price),
         notes: entry.notes,
@@ -236,12 +317,24 @@ const NewEntryPage: React.FC = () => {
 
             {/* Type Field */}
             <div>
-              <label 
-                htmlFor="type"
-                className={`block text-gray-700 text-sm font-medium mb-1 ${isArabic ? 'text-right' : 'text-left'}`}
-              >
-                {isArabic ? 'النوع' : 'Type'} <span className="text-red-500">*</span>
-              </label>
+              <div className="flex justify-between items-center mb-1">
+                <label 
+                  htmlFor="type"
+                  className={`block text-gray-700 text-sm font-medium ${isArabic ? 'text-right' : 'text-left'}`}
+                >
+                  {isArabic ? 'النوع' : 'Type'} <span className="text-red-500">*</span>
+                </label>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setShowTypeModal(true)}
+                    className="text-blue-600 hover:text-blue-800 text-xs flex items-center"
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    {isArabic ? 'إدارة الأنواع' : 'Manage Types'}
+                  </button>
+                )}
+              </div>
               <select
                 id="type"
                 name="type"
@@ -252,9 +345,10 @@ const NewEntryPage: React.FC = () => {
                 } ${isArabic ? 'text-right' : 'text-left'}`}
               >
                 <option value="">{isArabic ? 'اختر النوع' : 'Select Type'}</option>
-                {Object.keys(PurchaseType).map((type) => (
-                  <option key={type} value={type}>
-                    {isArabic ? PurchaseTypeTranslations[type as PurchaseType].ar : PurchaseTypeTranslations[type as PurchaseType].en}
+                {/* Only show database types */}
+                {customTypes.map((type) => (
+                  <option key={type.id} value={type.id.toString()}>
+                    {isArabic ? type.name_ar : type.name}
                   </option>
                 ))}
               </select>
@@ -392,6 +486,108 @@ const NewEntryPage: React.FC = () => {
           </form>
         </div>
       </div>
+
+      {/* Add Type Modal */}
+      {showTypeModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-auto" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}>
+            <div className="p-4">
+              <h2 className="text-lg font-semibold mb-3">
+                {isArabic ? 'إدارة الأنواع' : 'Manage Types'}
+              </h2>
+              
+              {/* New Type Form */}
+              <div className="mb-4 space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {isArabic ? 'اسم النوع (بالإنجليزية)' : 'Type Name (English)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={newType.name}
+                    onChange={(e) => setNewType({...newType, name: e.target.value})}
+                    className="w-full p-2 border border-gray-300 rounded-md"
+                    placeholder={isArabic ? "أدخل الاسم بالإنجليزية" : "Enter name in English"}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {isArabic ? 'اسم النوع (بالعربية)' : 'Type Name (Arabic)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={newType.name_ar}
+                    onChange={(e) => setNewType({...newType, name_ar: e.target.value})}
+                    className="w-full p-2 border border-gray-300 rounded-md"
+                    placeholder={isArabic ? "أدخل الاسم بالعربية" : "Enter name in Arabic"}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddType}
+                  className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                >
+                  {isArabic ? 'إضافة نوع' : 'Add Type'}
+                </button>
+              </div>
+              
+              {/* List of Custom Types */}
+              <div className="max-h-60 overflow-auto border rounded-md">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        {isArabic ? 'اسم النوع (الإنجليزية)' : 'Type Name (English)'}
+                      </th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        {isArabic ? 'اسم النوع (العربية)' : 'Type Name (Arabic)'}
+                      </th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        {isArabic ? 'الإجراءات' : 'Actions'}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {customTypes.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="px-4 py-2 text-center text-sm text-gray-500">
+                          {isArabic ? 'لا توجد أنواع مخصصة' : 'No custom types available'}
+                        </td>
+                      </tr>
+                    ) : (
+                      customTypes.map((type) => (
+                        <tr key={type.id}>
+                          <td className="px-4 py-2 text-sm">{type.name}</td>
+                          <td className="px-4 py-2 text-sm">{type.name_ar}</td>
+                          <td className="px-4 py-2 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteType(type.id)}
+                              className="text-red-500 hover:text-red-700"
+                            >
+                              <Trash2 className="w-4 h-4 inline" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              
+              <div className="flex justify-end mt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowTypeModal(false)}
+                  className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 text-sm"
+                >
+                  {isArabic ? 'إغلاق' : 'Close'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

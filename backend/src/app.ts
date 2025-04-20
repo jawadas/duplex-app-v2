@@ -12,6 +12,7 @@ import authRoutes from './routes/auth.routes';
 import { authenticateToken, authorizeRole } from './middleware/auth.middleware';
 import { Request, Response } from 'express';
 import pool from './config/database';
+import purchaseTypesRoutes from './routes/purchase-types.routes';
 
 // Load environment variables from .env file
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -76,7 +77,7 @@ app.use(`${apiPrefix}/work-payments`, authenticateToken, workPaymentRoutes);
 app.use(`${apiPrefix}/analytics`, authenticateToken, analyticsRoutes);
 app.use(`${apiPrefix}/admin`, authenticateToken, adminRoutes);
 app.use(`${apiPrefix}/auth`, authRoutes);
-
+app.use(`${apiPrefix}/purchase-types`, purchaseTypesRoutes);
 
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

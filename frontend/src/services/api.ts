@@ -48,6 +48,19 @@ axiosInstance.interceptors.response.use(
   }
 );
 
+// Add types for PurchaseType API
+interface PurchaseTypeResponse {
+  success: boolean;
+  data?: {
+    id: number;
+    name: string;
+    name_ar: string;
+    created_at: string;
+  }[];
+  error?: string;
+  message?: string;
+}
+
 export const api = {
   auth: {
     register: async (data: Omit<RegisterFormData, 'confirmPassword'>) => {
@@ -465,6 +478,36 @@ export const api = {
       } catch (error) {
         console.error('Error fetching login activity:', error);
         return [];
+      }
+    }
+  },
+
+  purchaseTypes: {
+    getAll: async (): Promise<PurchaseTypeResponse> => {
+      try {
+        const response = await axiosInstance.get<PurchaseTypeResponse>('/purchase-types');
+        return response.data;
+      } catch (error) {
+        console.error('Error fetching purchase types:', error);
+        return { success: false, error: 'Failed to fetch purchase types' };
+      }
+    },
+    create: async (typeData: { name: string, name_ar: string }): Promise<PurchaseTypeResponse> => {
+      try {
+        const response = await axiosInstance.post<PurchaseTypeResponse>('/purchase-types', typeData);
+        return response.data;
+      } catch (error) {
+        console.error('Error creating purchase type:', error);
+        throw error;
+      }
+    },
+    delete: async (id: number): Promise<PurchaseTypeResponse> => {
+      try {
+        const response = await axiosInstance.delete<PurchaseTypeResponse>(`/purchase-types/${id}`);
+        return response.data;
+      } catch (error) {
+        console.error('Error deleting purchase type:', error);
+        throw error;
       }
     }
   }

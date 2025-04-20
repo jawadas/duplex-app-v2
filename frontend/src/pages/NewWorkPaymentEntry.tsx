@@ -6,6 +6,12 @@ import { storage } from '../services/storage';
 import { DUPLEX_NUMBERS } from '../constants/duplex';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
+import { format, subDays, startOfMonth, endOfMonth, endOfDay, startOfDay } from 'date-fns';
+
+interface DateFilters {
+  startDate?: string;
+  endDate?: string;
+}
 
 const NewWorkPaymentEntry: React.FC = () => {
   const { isArabic } = useLanguage();
@@ -54,6 +60,12 @@ const NewWorkPaymentEntry: React.FC = () => {
   const [validationErrors, setValidationErrors] = useState<{[key: string]: boolean}>({});
   const [selectedNotes, setSelectedNotes] = useState<string | null>(null);
   const [showNotesModal, setShowNotesModal] = useState(false);
+  // Date filtering states
+  const [dateFilters, setDateFilters] = useState<DateFilters>({
+    startDate: format(new Date(), 'yyyy-MM-dd'),
+    endDate: format(new Date(), 'yyyy-MM-dd')
+  });
+  const [selectedDateRange, setSelectedDateRange] = useState<'today' | 'yesterday' | 'week' | 'month' | 'all'>('today');
 
   // Memoize the modal input style to prevent recalculation on each render
   const modalInputStyle = useMemo(() => ({
@@ -169,14 +181,114 @@ const NewWorkPaymentEntry: React.FC = () => {
         date: payment.date
       })).filter(payment => !isNaN(payment.amount));
       
-      setPayments(validPayments);
+      let filteredPayments = validPayments;
+      
+      // Apply date filtering if enabled
+      if (selectedDateRange !== 'all' && dateFilters.startDate && dateFilters.endDate) {
+        const startDate = new Date(dateFilters.startDate);
+        startDate.setHours(0, 0, 0, 0);
+        
+        const endDate = new Date(dateFilters.endDate);
+        endDate.setHours(23, 59, 59, 999);
+        
+        filteredPayments = validPayments.filter(payment => {
+          const paymentDate = new Date(payment.date);
+          return paymentDate >= startDate && paymentDate <= endDate;
+        });
+      }
+      
+      setPayments(filteredPayments);
     } catch (error) {
       console.error('Error loading payments:', error);
       setPayments([]);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [dateFilters.startDate, dateFilters.endDate, selectedDateRange]);
+
+  // Add date range selection handler
+  const handleDateRangeSelect = useCallback((range: 'today' | 'yesterday' | 'week' | 'month' | 'all') => {
+    const now = new Date();
+    
+    switch (range) {
+      case 'today':
+        const today = format(now, 'yyyy-MM-dd');
+        setDateFilters(prev => ({
+          ...prev,
+          startDate: today,
+          endDate: today
+        }));
+        break;
+      case 'yesterday':
+        const yesterday = subDays(now, 1);
+        setDateFilters(prev => ({
+          ...prev,
+          startDate: format(yesterday, 'yyyy-MM-dd'),
+          endDate: format(yesterday, 'yyyy-MM-dd')
+        }));
+        break;
+      case 'week':
+        const weekStart = subDays(now, 7);
+        setDateFilters(prev => ({
+          ...prev,
+          startDate: format(weekStart, 'yyyy-MM-dd'),
+          endDate: format(now, 'yyyy-MM-dd')
+        }));
+        break;
+      case 'month':
+        const monthStart = startOfMonth(now);
+        const monthEnd = endOfMonth(now);
+        setDateFilters(prev => ({
+          ...prev,
+          startDate: format(monthStart, 'yyyy-MM-dd'),
+          endDate: format(monthEnd, 'yyyy-MM-dd')
+        }));
+        break;
+      case 'all':
+        setDateFilters(prev => ({
+          ...prev,
+          startDate: undefined,
+          endDate: undefined
+        }));
+        break;
+    }
+    setSelectedDateRange(range);
+    
+    // Reload payments with new date filters if project is selected
+    if (selectedProject?.id) {
+      loadProjectPayments(selectedProject.id);
+    }
+  }, [selectedProject, loadProjectPayments]);
+  
+  // Handler for individual date filter changes
+  const handleDateFilterChange = useCallback((key: keyof DateFilters, value: string | undefined) => {
+    setDateFilters(prev => ({
+      ...prev,
+      [key]: value
+    }));
+    
+    // If both dates are set, reload payments
+    if ((key === 'startDate' && value && dateFilters.endDate) || 
+        (key === 'endDate' && value && dateFilters.startDate)) {
+      if (selectedProject?.id) {
+        loadProjectPayments(selectedProject.id);
+      }
+    }
+  }, [dateFilters.endDate, dateFilters.startDate, loadProjectPayments, selectedProject]);
+  
+  // Reset date filters function
+  const resetDateFilters = useCallback(() => {
+    setDateFilters({
+      startDate: format(startOfDay(new Date()), 'yyyy-MM-dd'),
+      endDate: format(endOfDay(new Date()), 'yyyy-MM-dd')
+    });
+    setSelectedDateRange('today');
+    
+    // Reload payments with reset filters
+    if (selectedProject?.id) {
+      loadProjectPayments(selectedProject.id);
+    }
+  }, [loadProjectPayments, selectedProject]);
 
   // Optimize handleChange with useCallback
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -430,7 +542,7 @@ const NewWorkPaymentEntry: React.FC = () => {
     } else {
       setPayments([]);
     }
-  }, [selectedProject?.id]);
+  }, [selectedProject?.id, loadProjectPayments]);
 
   const handleEdit = (payment: Payment) => {
     setSelectedPayment(payment);
@@ -654,6 +766,112 @@ const NewWorkPaymentEntry: React.FC = () => {
                 ))}
               </select>
             </div>
+            
+            {/* Date Range Filters - Only show when a project is selected */}
+            {selectedProject && (
+              <>
+                <div>
+                  <div className="text-xs text-gray-500 mb-1">
+                    {isArabic ? 'تاريخ من' : 'Date From'}
+                  </div>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md mb-2 text-center"
+                    value={dateFilters.startDate || ''}
+                    onChange={(e) => handleDateFilterChange('startDate', e.target.value || undefined)}
+                    style={{
+                      fontSize: '16px',
+                      height: '50px',
+                      textAlign: 'center',
+                      backgroundColor: '#ffffff',
+                      color: '#000000'
+                    }}
+                  />
+                  
+                  <div className="text-xs text-gray-500 mb-1">
+                    {isArabic ? 'تاريخ إلى' : 'Date To'}
+                  </div>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md mb-2 text-center"
+                    value={dateFilters.endDate || ''}
+                    onChange={(e) => handleDateFilterChange('endDate', e.target.value || undefined)}
+                    style={{
+                      fontSize: '16px',
+                      height: '50px',
+                      textAlign: 'center',
+                      backgroundColor: '#ffffff',
+                      color: '#000000'
+                    }}
+                  />
+                </div>
+
+                {/* Quick Date Filters */}
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    onClick={() => handleDateRangeSelect('today')}
+                    className={`flex-1 min-w-[80px] py-2 px-3 rounded-lg text-sm font-medium ${
+                      selectedDateRange === 'today' 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {isArabic ? 'اليوم' : 'Today'}
+                  </button>
+                  <button
+                    onClick={() => handleDateRangeSelect('yesterday')}
+                    className={`flex-1 min-w-[80px] py-2 px-3 rounded-lg text-sm font-medium ${
+                      selectedDateRange === 'yesterday' 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {isArabic ? 'الأمس' : 'Yesterday'}
+                  </button>
+                  <button
+                    onClick={() => handleDateRangeSelect('week')}
+                    className={`flex-1 min-w-[80px] py-2 px-3 rounded-lg text-sm font-medium ${
+                      selectedDateRange === 'week' 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {isArabic ? 'آخر ٧ أيام' : 'Last 7 Days'}
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  <button
+                    onClick={() => handleDateRangeSelect('month')}
+                    className={`flex-1 min-w-[80px] py-2 px-3 rounded-lg text-sm font-medium ${
+                      selectedDateRange === 'month' 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {isArabic ? 'هذا الشهر' : 'This Month'}
+                  </button>
+                  <button
+                    onClick={() => handleDateRangeSelect('all')}
+                    className={`flex-1 min-w-[80px] py-2 px-3 rounded-lg text-sm font-medium ${
+                      selectedDateRange === 'all'
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {isArabic ? 'عرض الكل' : 'Show All'}
+                  </button>
+                </div>
+
+                {/* Reset Date Filters Button */}
+                <button
+                  onClick={resetDateFilters}
+                  className="w-full py-2 px-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium mt-1.5"
+                >
+                  {isArabic ? 'إعادة تعيين تاريخ الفلاتر' : 'Reset Date Filters'}
+                </button>
+              </>
+            )}
           </div>
         </div>
 

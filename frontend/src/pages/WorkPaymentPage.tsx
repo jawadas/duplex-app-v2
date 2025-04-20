@@ -5,6 +5,7 @@ import type { WorkProject } from '../types/labor.types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { storage } from '../services/storage';
 import { useAuth } from '../contexts/AuthContext';
+import { format, subDays, startOfMonth, endOfMonth, endOfDay, startOfDay } from 'date-fns';
 
 interface EditFormData {
   amount: string;
@@ -27,6 +28,11 @@ interface WorkPayment {
   created_by?: string;
 }
 
+interface DateFilters {
+  startDate?: string;
+  endDate?: string;
+}
+
 const WorkPaymentPage: React.FC = () => {
   const { isArabic } = useLanguage();
   const { user } = useAuth();
@@ -43,6 +49,11 @@ const WorkPaymentPage: React.FC = () => {
     notes: '',
     attachments: []
   });
+  const [dateFilters, setDateFilters] = useState<DateFilters>({
+    startDate: format(new Date(), 'yyyy-MM-dd'),
+    endDate: format(new Date(), 'yyyy-MM-dd')
+  });
+  const [selectedDateRange, setSelectedDateRange] = useState<'today' | 'yesterday' | 'week' | 'month' | 'all'>('today');
 
   // Common styles for modal inputs to fix dark mode on iOS
 
@@ -59,7 +70,8 @@ const WorkPaymentPage: React.FC = () => {
       console.log('loadPaymentsForProject called with:', {
         selectedProject,
         selectedDuplex,
-        projects
+        projects,
+        dateFilters
       });
       
       // If we don't have projects loaded yet, wait for them
@@ -80,7 +92,24 @@ const WorkPaymentPage: React.FC = () => {
         try {
           const data = await api.getWorkProjectPayments(selectedProject.id);
           console.log('Loaded payments:', data);
-          setPayments(data.map(payment => ({
+          
+          let filteredData = data;
+          
+          // Apply date filters if they exist
+          if (selectedDateRange !== 'all' && dateFilters.startDate && dateFilters.endDate) {
+            const startDate = new Date(dateFilters.startDate);
+            startDate.setHours(0, 0, 0, 0);
+            
+            const endDate = new Date(dateFilters.endDate);
+            endDate.setHours(23, 59, 59, 999);
+            
+            filteredData = data.filter(payment => {
+              const paymentDate = new Date(payment.date);
+              return paymentDate >= startDate && paymentDate <= endDate;
+            });
+          }
+          
+          setPayments(filteredData.map(payment => ({
             ...payment,
             duplex_number: String(payment.duplex_number),
             project_name: selectedProject.name
@@ -107,7 +136,7 @@ const WorkPaymentPage: React.FC = () => {
     };
 
     loadPaymentsForProject();
-  }, [selectedProject, selectedDuplex, projects]);
+  }, [selectedProject, selectedDuplex, projects, dateFilters.startDate, dateFilters.endDate]);
 
   const loadProjects = async () => {
     try {
@@ -150,9 +179,24 @@ const WorkPaymentPage: React.FC = () => {
       );
 
       const allPayments = await Promise.all(allPaymentsPromises);
-      const flattenedPayments = allPayments.flat().sort((a, b) => {
+      let flattenedPayments = allPayments.flat().sort((a, b) => {
         return new Date(b.date).getTime() - new Date(a.date).getTime();
       });
+      
+      // Filter payments by date if date filters are set
+      if (selectedDateRange !== 'all' && dateFilters.startDate && dateFilters.endDate) {
+        const startDate = new Date(dateFilters.startDate);
+        startDate.setHours(0, 0, 0, 0);
+        
+        const endDate = new Date(dateFilters.endDate);
+        endDate.setHours(23, 59, 59, 999);
+        
+        flattenedPayments = flattenedPayments.filter(payment => {
+          const paymentDate = new Date(payment.date);
+          return paymentDate >= startDate && paymentDate <= endDate;
+        });
+      }
+      
       setPayments(flattenedPayments);
     } catch (error) {
       console.error('Error loading all payments:', error);
@@ -310,6 +354,87 @@ const WorkPaymentPage: React.FC = () => {
     }
   };
 
+  const handleDateRangeSelect = (range: 'today' | 'yesterday' | 'week' | 'month' | 'all') => {
+    const now = new Date();
+    
+    switch (range) {
+      case 'today':
+        const today = format(now, 'yyyy-MM-dd');
+        setDateFilters(prev => ({
+          ...prev,
+          startDate: today,
+          endDate: today
+        }));
+        break;
+      case 'yesterday':
+        const yesterday = subDays(now, 1);
+        setDateFilters(prev => ({
+          ...prev,
+          startDate: format(yesterday, 'yyyy-MM-dd'),
+          endDate: format(yesterday, 'yyyy-MM-dd')
+        }));
+        break;
+      case 'week':
+        const weekStart = subDays(now, 7);
+        setDateFilters(prev => ({
+          ...prev,
+          startDate: format(weekStart, 'yyyy-MM-dd'),
+          endDate: format(now, 'yyyy-MM-dd')
+        }));
+        break;
+      case 'month':
+        const monthStart = startOfMonth(now);
+        const monthEnd = endOfMonth(now);
+        setDateFilters(prev => ({
+          ...prev,
+          startDate: format(monthStart, 'yyyy-MM-dd'),
+          endDate: format(monthEnd, 'yyyy-MM-dd')
+        }));
+        break;
+      case 'all':
+        setDateFilters(prev => ({
+          ...prev,
+          startDate: undefined,
+          endDate: undefined
+        }));
+        break;
+    }
+    setSelectedDateRange(range);
+    
+    // Reload payments with new date filters
+    if (selectedDuplex) {
+      loadAllPaymentsForDuplex();
+    }
+  };
+  
+  const handleDateFilterChange = (key: keyof DateFilters, value: string | undefined) => {
+    setDateFilters(prev => ({
+      ...prev,
+      [key]: value
+    }));
+    
+    // If both dates are set, reload payments
+    if ((key === 'startDate' && value && dateFilters.endDate) || 
+        (key === 'endDate' && value && dateFilters.startDate)) {
+      if (selectedDuplex) {
+        loadAllPaymentsForDuplex();
+      }
+    }
+  };
+  
+  const resetDateFilters = () => {
+    setDateFilters({
+      startDate: format(startOfDay(new Date()), 'yyyy-MM-dd'),
+      endDate: format(endOfDay(new Date()), 'yyyy-MM-dd')
+    });
+    setSelectedDateRange('today');
+    
+    // Reload payments with reset filters
+    if (selectedDuplex) {
+      loadAllPaymentsForDuplex();
+    }
+  };
+
   const removeExistingAttachment = (index: number) => {
     if (selectedPayment) {
       const updatedPaths = [...(selectedPayment.attachment_paths || [])];
@@ -434,6 +559,108 @@ const WorkPaymentPage: React.FC = () => {
                   ))}
                 </select>
               </div>
+            )}
+            
+            {/* Date Range Filters */}
+            {selectedDuplex && (
+              <>
+                <div>
+                  <div className="text-xs text-gray-500 mb-1">
+                    {isArabic ? 'تاريخ من' : 'Date From'}
+                  </div>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md mb-2 text-center"
+                    value={dateFilters.startDate || ''}
+                    onChange={(e) => handleDateFilterChange('startDate', e.target.value || undefined)}
+                    style={{
+                      fontSize: '16px',
+                      height: '50px',
+                      textAlign: 'center'
+                    }}
+                  />
+                  
+                  <div className="text-xs text-gray-500 mb-1">
+                    {isArabic ? 'تاريخ إلى' : 'Date To'}
+                  </div>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md mb-2 text-center"
+                    value={dateFilters.endDate || ''}
+                    onChange={(e) => handleDateFilterChange('endDate', e.target.value || undefined)}
+                    style={{
+                      fontSize: '16px',
+                      height: '50px',
+                      textAlign: 'center'
+                    }}
+                  />
+                </div>
+
+                {/* Quick Date Filters */}
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    onClick={() => handleDateRangeSelect('today')}
+                    className={`flex-1 min-w-[80px] py-2 px-3 rounded-lg text-sm font-medium ${
+                      selectedDateRange === 'today' 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {isArabic ? 'اليوم' : 'Today'}
+                  </button>
+                  <button
+                    onClick={() => handleDateRangeSelect('yesterday')}
+                    className={`flex-1 min-w-[80px] py-2 px-3 rounded-lg text-sm font-medium ${
+                      selectedDateRange === 'yesterday' 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {isArabic ? 'الأمس' : 'Yesterday'}
+                  </button>
+                  <button
+                    onClick={() => handleDateRangeSelect('week')}
+                    className={`flex-1 min-w-[80px] py-2 px-3 rounded-lg text-sm font-medium ${
+                      selectedDateRange === 'week' 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {isArabic ? 'آخر ٧ أيام' : 'Last 7 Days'}
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    onClick={() => handleDateRangeSelect('month')}
+                    className={`flex-1 min-w-[80px] py-2 px-3 rounded-lg text-sm font-medium ${
+                      selectedDateRange === 'month' 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {isArabic ? 'هذا الشهر' : 'This Month'}
+                  </button>
+                  <button
+                    onClick={() => handleDateRangeSelect('all')}
+                    className={`flex-1 min-w-[80px] py-2 px-3 rounded-lg text-sm font-medium ${
+                      selectedDateRange === 'all'
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {isArabic ? 'عرض الكل' : 'Show All'}
+                  </button>
+                </div>
+
+                {/* Reset Date Filters Button */}
+                <button
+                  onClick={resetDateFilters}
+                  className="w-full py-2 px-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
+                >
+                  {isArabic ? 'إعادة تعيين تاريخ الفلاتر' : 'Reset Date Filters'}
+                </button>
+              </>
             )}
           </div>
         </div>

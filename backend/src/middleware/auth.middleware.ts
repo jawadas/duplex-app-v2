@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import pool from '../config/database'; // Changed from import { pool }
-import { AuthUser } from '../types/auth.types';
+import { AuthUser, AuthenticatedRequest } from '../types/auth.types';
 import { RowDataPacket } from 'mysql2';
 
 // Extend Express Request type to include user
@@ -99,6 +99,15 @@ export const authorizeRole = (allowedRoles: string[]) => {
       return;
     }
   };
+};
+
+// Add isAdmin middleware function
+export const isAdmin = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  if (req.user && req.user.role === 'admin') {
+    next();
+  } else {
+    res.status(403).json({ success: false, message: 'Access denied: Admin role required' });
+  }
 };
 
 // Vite configuration has been moved to vite.config.ts to avoid module conflicts in the backend

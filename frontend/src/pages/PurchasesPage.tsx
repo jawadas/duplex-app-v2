@@ -39,6 +39,14 @@ interface PurchaseFilters {
   type?: PurchaseType;
 }
 
+// Add interface for custom types
+interface CustomPurchaseType {
+  id: number;
+  name: string;
+  name_ar: string;
+  created_at: string;
+}
+
 const PurchasesPage: React.FC = () => {
   const { isArabic } = useLanguage();
   const navigate = useNavigate();
@@ -67,12 +75,29 @@ const PurchasesPage: React.FC = () => {
     attachments: []
   });
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [customTypes, setCustomTypes] = useState<CustomPurchaseType[]>([]);
 
   useEffect(() => {
     const savedLang = localStorage.getItem('isArabic');
     if (savedLang !== null) {
       // Removed the setIsArabic call as it's now handled by the LanguageContext
     }
+  }, []);
+
+  useEffect(() => {
+    // Load custom purchase types
+    const loadCustomTypes = async () => {
+      try {
+        const response = await api.purchaseTypes.getAll();
+        if (response.success && response.data) {
+          setCustomTypes(response.data);
+        }
+      } catch (error) {
+        console.error('Error loading custom types:', error);
+      }
+    };
+    
+    loadCustomTypes();
   }, []);
 
   const loadPurchases = async () => {
@@ -363,6 +388,25 @@ const PurchasesPage: React.FC = () => {
     });
   };
 
+  // Helper function to get purchase type display name
+  const getPurchaseTypeDisplayName = (type: string): string => {
+    // Check if it's one of the enum types
+    if (Object.values(PurchaseType).includes(type as PurchaseType)) {
+      return isArabic 
+        ? PurchaseTypeTranslations[type as PurchaseType].ar 
+        : PurchaseTypeTranslations[type as PurchaseType].en;
+    }
+    
+    // Otherwise, find the custom type by name
+    const customType = customTypes.find(ct => ct.name === type);
+    if (customType) {
+      return isArabic ? customType.name_ar : customType.name;
+    }
+    
+    // Fallback to just showing the type string
+    return type;
+  };
+
   return (
     <div className="min-h-screen bg-[#f5f5f5] pb-20">
       <div className="container mx-auto p-4 md:max-w-2xl">
@@ -580,9 +624,7 @@ const PurchasesPage: React.FC = () => {
                         <td className="p-4 text-gray-800">{purchase.name}</td>
                         <td className="p-4 text-gray-800">{purchase.duplex_number}</td>
                         <td className="p-4 text-gray-800">
-                          {purchase.type && PurchaseTypeTranslations[purchase.type as PurchaseType] 
-                            ? PurchaseTypeTranslations[purchase.type as PurchaseType][isArabic ? 'ar' : 'en']
-                            : purchase.type}
+                          {getPurchaseTypeDisplayName(purchase.type)}
                         </td>
                         <td className="p-4 text-gray-800">
                           {typeof purchase.price === 'number' ? 
@@ -780,13 +822,14 @@ const PurchasesPage: React.FC = () => {
                       isArabic ? 'text-right pl-8' : 'text-left pr-8'
                     }`}
                     value={editFormData.type}
-                    onChange={(e) => setEditFormData(prev => ({ ...prev, type: e.target.value as PurchaseType }))}
+                    onChange={(e) => setEditFormData(prev => ({ ...prev, type: e.target.value }))}
                     style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}
                   >
                     <option value="">{isArabic ? 'اختر النوع' : 'Select Type'}</option>
-                    {Object.keys(PurchaseType).map((type) => (
-                      <option key={type} value={type}>
-                        {isArabic ? PurchaseTypeTranslations[type as PurchaseType].ar : PurchaseTypeTranslations[type as PurchaseType].en}
+                    {/* Show custom types from database */}
+                    {customTypes.map((type) => (
+                      <option key={type.id} value={type.name}>
+                        {isArabic ? type.name_ar : type.name}
                       </option>
                     ))}
                   </select>
