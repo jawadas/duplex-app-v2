@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background Circle -->
+  <circle cx="256" cy="256" r="256" fill="#2563eb"/>
+  
+  <!-- House Shape -->
+  <g transform="translate(96, 116)">
+    <!-- Main House Structure -->
+    <path d="
+      M160 40
+      L20 160
+      L60 160
+      L60 280
+      L260 280
+      L260 160
+      L300 160
+      L160 40Z
+      " 
+      fill="white"
+    />
+    
+    <!-- Dividing Line (for duplex) -->
+    <path d="M160 140 L160 280" 
+          stroke="#2563eb" 
+          stroke-width="8"/>
+    
+    <!-- Left Window -->
+    <rect x="85" y="180" width="40" height="40" fill="#2563eb"/>
+    
+    <!-- Right Window -->
+    <rect x="195" y="180" width="40" height="40" fill="#2563eb"/>
+    
+    <!-- Left Door -->
+    <rect x="85" y="230" width="30" height="50" fill="#2563eb"/>
+    
+    <!-- Right Door -->
+    <rect x="205" y="230" width="30" height="50" fill="#2563eb"/>
+  </g>
+</svg>
