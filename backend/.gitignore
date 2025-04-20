@@ -1,6 +1,0 @@
-node_modules
-dist
-.env
-# Ignore uploads directory but keep the directory itself
-uploads/*
-!uploads/.gitkeep
